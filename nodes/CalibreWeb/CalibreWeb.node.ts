@@ -167,23 +167,43 @@ export class CalibreWeb implements INodeType {
 					};
 
 					try {
+						// Set resolveWithFullResponse to get complete response details
 						const response = await this.helpers.requestWithAuthentication.call(
 							this,
 							'calibreWebApi',
-							requestOptions,
+							{
+								...requestOptions,
+								resolveWithFullResponse: true,
+							},
 						);
 
 						returnData.push({
 							json: {
 								success: true,
-								...response,
+								statusCode: response.statusCode,
+								headers: response.headers,
+								body: response.body,
 							},
 						});
 					} catch (error) {
+						const errorDetails = {
+							statusCode: error.statusCode || error.response?.statusCode,
+							message: error.message,
+							response: error.response?.body || error.error,
+						};
+
+						// Log error details to n8n's execution log
+						this.logger.error('Calibre Web Upload Error', { error: errorDetails });
+
 						throw new NodeOperationError(
 							this.getNode(),
-							'Failed to upload book. Please check your credentials and try again.',
-							{ itemIndex: i },
+							`Upload failed: ${errorDetails.response || errorDetails.message}. Status: ${
+								errorDetails.statusCode || 'unknown'
+							}`,
+							{
+								itemIndex: i,
+								description: `Check if your user has upload permissions and credentials are correct. Details: ${JSON.stringify(errorDetails)}`,
+							},
 						);
 					}
 				}
