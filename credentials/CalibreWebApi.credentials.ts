@@ -33,9 +33,9 @@ export class CalibreWebApi implements ICredentialType {
 			displayName: 'Base URL',
 			name: 'baseUrl',
 			type: 'string',
-			default: 'http://localhost:8083',
+			default: '',
 			required: true,
-			description: 'Base URL of your Calibre Web instance (e.g., http://localhost:8083)',
+			description: 'Base URL of your Calibre Web instance including protocol (e.g., https://calibre.example.com)',
 		},
 	];
 
