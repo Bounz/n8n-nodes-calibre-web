@@ -6,6 +6,7 @@ import {
 	INodeTypeDescription,
 	NodeOperationError,
 	IBinaryData,
+	IHttpRequestOptions,
 } from 'n8n-workflow';
 
 export class CalibreWeb implements INodeType {
@@ -159,22 +160,54 @@ export class CalibreWeb implements INodeType {
 						}
 					});
 
-					const requestOptions: IDataObject = {
-						method: 'POST',
-						url: '/upload',
-						returnFullResponse: true,
-						formData,
-					};
-
+					// First get CSRF token from main page
 					try {
-						// Set resolveWithFullResponse to get complete response details
+						const mainPageOptions: IHttpRequestOptions = {
+							method: 'GET',
+							url: '/',
+							json: false,
+						};
+
+						const mainPageResponse = await this.helpers.requestWithAuthentication.call(
+							this,
+							'calibreWebApi',
+							mainPageOptions,
+						);
+
+						// Extract CSRF token from response
+						const csrfMatch = mainPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
+						if (!csrfMatch) {
+							throw new Error('Could not find CSRF token');
+						}
+						const csrfToken = csrfMatch[1];
+						const cookies = mainPageResponse.headers['set-cookie'];
+						const cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
+
+						// Prepare the request with proper form data
+						const requestOptions: IHttpRequestOptions = {
+							method: 'POST',
+							url: '/upload',
+							body: {
+								'csrf_token': csrfToken,
+								'btn-upload': {
+									value: await this.helpers.getBinaryDataBuffer(i, binaryPropertyName),
+									options: {
+										filename: binaryData.fileName || 'unknown.epub',
+										contentType: binaryData.mimeType || 'application/epub+zip',
+									},
+								},
+							},
+							headers: {
+								'X-Requested-With': 'XMLHttpRequest',
+								Cookie: cookieHeader,
+							},
+						};
+
+						// Make upload request with CSRF token and cookies
 						const response = await this.helpers.requestWithAuthentication.call(
 							this,
 							'calibreWebApi',
-							{
-								...requestOptions,
-								resolveWithFullResponse: true,
-							},
+							requestOptions,
 						);
 
 						returnData.push({
