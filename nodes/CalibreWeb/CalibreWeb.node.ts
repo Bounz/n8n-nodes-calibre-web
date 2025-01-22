@@ -182,7 +182,7 @@ export class CalibreWeb implements INodeType {
 					} catch (error) {
 						throw new NodeOperationError(
 							this.getNode(),
-							`Failed to upload book: ${error.message}`,
+							'Failed to upload book. Please check your credentials and try again.',
 							{ itemIndex: i },
 						);
 					}
