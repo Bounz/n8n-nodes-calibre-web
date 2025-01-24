@@ -28,6 +28,13 @@ export class CalibreWeb implements INodeType {
 				required: true,
 			},
 		],
+		requestDefaults: {
+			baseURL: '={{ $credentials.baseUrl }}',
+			headers: {
+				'Accept': 'application/json',
+				'Content-Type': 'application/json',
+			},
+		},
 		properties: [
 			{
 				displayName: 'Operation',
@@ -160,11 +167,46 @@ export class CalibreWeb implements INodeType {
 						}
 					});
 
+					const handleRequestError = (error: any, options: IHttpRequestOptions) => {
+						const requestDetails = {
+							url: options.url,
+							method: options.method,
+							headers: options.headers,
+						};
+
+						const errorDetails = {
+							statusCode: error.statusCode || error.response?.statusCode,
+							message: error.message,
+							response: error.response?.body || error.error,
+							request: requestDetails,
+						};
+
+						this.logger.error('Calibre Web Request Error', {
+							error: errorDetails,
+							finalRequestAddress: requestDetails.url,
+							requestDetails,
+						});
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Request failed: ${errorDetails.response || errorDetails.message}. Status: ${
+								errorDetails.statusCode || 'unknown'
+							}`,
+							{
+								itemIndex: i,
+								description: `Check if your user has upload permissions and credentials are correct. Details: ${JSON.stringify(errorDetails)}`,
+							},
+						);
+					};
+
 					// First get CSRF token from main page
 					try {
+						const credentials = await this.getCredentials('calibreWebApi');
+						const baseUrl = (credentials.baseUrl as string).replace(/\/$/, '');
+
 						const mainPageOptions: IHttpRequestOptions = {
 							method: 'GET',
-							url: '/',
+							url: `${baseUrl}/`,
 							json: false,
 						};
 
@@ -172,7 +214,7 @@ export class CalibreWeb implements INodeType {
 							this,
 							'calibreWebApi',
 							mainPageOptions,
-						);
+						).catch(error => handleRequestError(error, mainPageOptions));
 
 						// Extract CSRF token from response
 						const csrfMatch = mainPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
@@ -186,7 +228,7 @@ export class CalibreWeb implements INodeType {
 						// Prepare the request with proper form data
 						const requestOptions: IHttpRequestOptions = {
 							method: 'POST',
-							url: '/upload',
+							url: `${baseUrl}/upload`,
 							body: {
 								'csrf_token': csrfToken,
 								'btn-upload': {
@@ -208,7 +250,7 @@ export class CalibreWeb implements INodeType {
 							this,
 							'calibreWebApi',
 							requestOptions,
-						);
+						).catch(error => handleRequestError(error, requestOptions));
 
 						returnData.push({
 							json: {
@@ -219,25 +261,12 @@ export class CalibreWeb implements INodeType {
 							},
 						});
 					} catch (error) {
-						const errorDetails = {
-							statusCode: error.statusCode || error.response?.statusCode,
-							message: error.message,
-							response: error.response?.body || error.error,
-						};
-
-						// Log error details to n8n's execution log
-						this.logger.error('Calibre Web Upload Error', { error: errorDetails });
-
-						throw new NodeOperationError(
-							this.getNode(),
-							`Upload failed: ${errorDetails.response || errorDetails.message}. Status: ${
-								errorDetails.statusCode || 'unknown'
-							}`,
-							{
-								itemIndex: i,
-								description: `Check if your user has upload permissions and credentials are correct. Details: ${JSON.stringify(errorDetails)}`,
-							},
-						);
+						// Handle any other unexpected errors
+						this.logger.error('Unexpected Calibre Web Error', { error });
+						throw new NodeOperationError(this.getNode(), 'An unexpected error occurred', {
+							itemIndex: i,
+							description: error.message,
+						});
 					}
 				}
 			} catch (error) {
