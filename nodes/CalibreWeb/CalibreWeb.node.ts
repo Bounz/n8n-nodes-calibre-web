@@ -169,28 +169,20 @@ export class CalibreWeb implements INodeType {
 					});
 
 					const handleRequestError = (error: any, options: IHttpRequestOptions) => {
-						const requestDetails = {
-							url: options.url,
-							method: options.method,
-							headers: options.headers,
-						};
-
 						const errorDetails = {
 							statusCode: error.statusCode || error.response?.statusCode,
 							message: error.message,
 							response: error.response?.body || error.error,
-							request: requestDetails,
 						};
 
 						this.logger.error('Calibre Web Request Error', {
-							error: errorDetails,
-							finalRequestAddress: requestDetails.url,
-							requestDetails,
+							statusCode: errorDetails.statusCode,
+							message: errorDetails.message,
 						});
 
 						throw new NodeOperationError(
 							this.getNode(),
-							`Request failed: ${errorDetails.response || errorDetails.message}. Status: ${
+							`Request failed: ${errorDetails.message}. Status: ${
 								errorDetails.statusCode || 'unknown'
 							}`,
 							{
@@ -200,15 +192,67 @@ export class CalibreWeb implements INodeType {
 						);
 					};
 
-					// First get CSRF token from main page
+					// Step 1: Get CSRF token from login page
 					try {
 						const credentials = await this.getCredentials('calibreWebApi');
 						const baseUrl = (credentials.baseUrl as string).replace(/\/$/, '');
 
+						// Step 1: Get login page and CSRF token
+						const loginPageOptions: IHttpRequestOptions = {
+							method: 'GET',
+							url: `${baseUrl}/login`,
+							headers: {
+								'Accept': '*/*',
+							},
+							json: false,
+						};
+
+						const loginPageResponse = await this.helpers.requestWithAuthentication.call(
+							this,
+							'calibreWebApi',
+							loginPageOptions,
+						).catch(error => handleRequestError(error, loginPageOptions));
+
+						// Extract CSRF token from login page
+						const loginCsrfMatch = loginPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
+						if (!loginCsrfMatch) {
+							throw new Error('Could not find CSRF token on login page');
+						}
+						const loginCsrfToken = loginCsrfMatch[1];
+						let cookies = loginPageResponse.headers['set-cookie'];
+						let cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
+
+						// Step 2: Perform login with credentials
+						const loginOptions: IHttpRequestOptions = {
+							method: 'POST',
+							url: `${baseUrl}/login`,
+							headers: {
+								'Content-Type': 'application/x-www-form-urlencoded',
+								'Cookie': cookieHeader,
+								'Accept': '*/*',
+							},
+							body: `csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&next=%2F`,
+							json: false,
+						};
+
+						const loginResponse = await this.helpers.requestWithAuthentication.call(
+							this,
+							'calibreWebApi',
+							loginOptions,
+						).catch(error => handleRequestError(error, loginOptions));
+
+						// Update cookies after login
+						cookies = loginResponse.headers['set-cookie'];
+						if (cookies) {
+							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
+						}
+
+						// Step 3: Get main page after login to get new CSRF token for upload
 						const mainPageOptions: IHttpRequestOptions = {
 							method: 'GET',
 							url: `${baseUrl}/`,
 							headers: {
+								'Cookie': cookieHeader,
 								'Accept': '*/*',
 							},
 							json: false,
@@ -220,18 +264,22 @@ export class CalibreWeb implements INodeType {
 							mainPageOptions,
 						).catch(error => handleRequestError(error, mainPageOptions));
 
-						// Extract CSRF token from response
-						const csrfMatch = mainPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
-						if (!csrfMatch) {
-							throw new Error('Could not find CSRF token');
+						// Extract CSRF token for upload
+						const uploadCsrfMatch = mainPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
+						if (!uploadCsrfMatch) {
+							throw new Error('Could not find CSRF token for upload');
 						}
-						const csrfToken = csrfMatch[1];
-						const cookies = mainPageResponse.headers['set-cookie'];
-						const cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
+						const uploadCsrfToken = uploadCsrfMatch[1];
+
+						// Update cookies from main page response
+						cookies = mainPageResponse.headers['set-cookie'];
+						if (cookies) {
+							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
+						}
 
 						// Create form data for file upload
 						const form = new FormData();
-						form.append('csrf_token', csrfToken);
+						form.append('csrf_token', uploadCsrfToken);
 						form.append('btn-upload', await this.helpers.getBinaryDataBuffer(i, binaryPropertyName), {
 							filename: binaryData.fileName || 'unknown.epub',
 							contentType: binaryData.mimeType || 'application/epub+zip',
@@ -240,7 +288,7 @@ export class CalibreWeb implements INodeType {
 						// Get form headers including boundary
 						const formHeaders = form.getHeaders();
 
-						// Prepare the request with proper form data
+						// Prepare the upload request with proper form data
 						const requestOptions: IHttpRequestOptions = {
 							method: 'POST',
 							url: `${baseUrl}/upload`,
@@ -251,7 +299,7 @@ export class CalibreWeb implements INodeType {
 								'Cookie': cookieHeader,
 								'Accept': '*/*',
 							},
-							json: false, // Don't parse response as JSON automatically
+							json: false,
 						};
 
 						// Make upload request with CSRF token and cookies
