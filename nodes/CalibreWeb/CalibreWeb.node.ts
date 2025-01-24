@@ -8,6 +8,7 @@ import {
 	IBinaryData,
 	IHttpRequestOptions,
 } from 'n8n-workflow';
+import FormData = require('form-data');
 
 export class CalibreWeb implements INodeType {
 	description: INodeTypeDescription = {
@@ -207,6 +208,9 @@ export class CalibreWeb implements INodeType {
 						const mainPageOptions: IHttpRequestOptions = {
 							method: 'GET',
 							url: `${baseUrl}/`,
+							headers: {
+								'Accept': '*/*',
+							},
 							json: false,
 						};
 
@@ -225,24 +229,29 @@ export class CalibreWeb implements INodeType {
 						const cookies = mainPageResponse.headers['set-cookie'];
 						const cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
 
+						// Create form data for file upload
+						const form = new FormData();
+						form.append('csrf_token', csrfToken);
+						form.append('btn-upload', await this.helpers.getBinaryDataBuffer(i, binaryPropertyName), {
+							filename: binaryData.fileName || 'unknown.epub',
+							contentType: binaryData.mimeType || 'application/epub+zip',
+						});
+
+						// Get form headers including boundary
+						const formHeaders = form.getHeaders();
+
 						// Prepare the request with proper form data
 						const requestOptions: IHttpRequestOptions = {
 							method: 'POST',
 							url: `${baseUrl}/upload`,
-							body: {
-								'csrf_token': csrfToken,
-								'btn-upload': {
-									value: await this.helpers.getBinaryDataBuffer(i, binaryPropertyName),
-									options: {
-										filename: binaryData.fileName || 'unknown.epub',
-										contentType: binaryData.mimeType || 'application/epub+zip',
-									},
-								},
-							},
+							body: form,
 							headers: {
+								...formHeaders,
 								'X-Requested-With': 'XMLHttpRequest',
-								Cookie: cookieHeader,
+								'Cookie': cookieHeader,
+								'Accept': '*/*',
 							},
+							json: false, // Don't parse response as JSON automatically
 						};
 
 						// Make upload request with CSRF token and cookies
@@ -252,12 +261,20 @@ export class CalibreWeb implements INodeType {
 							requestOptions,
 						).catch(error => handleRequestError(error, requestOptions));
 
+						// Parse JSON response if it's JSON
+						let responseData;
+						try {
+							responseData = JSON.parse(response.body);
+						} catch (e) {
+							responseData = response.body;
+						}
+
 						returnData.push({
 							json: {
 								success: true,
 								statusCode: response.statusCode,
 								headers: response.headers,
-								body: response.body,
+								body: responseData,
 							},
 						});
 					} catch (error) {
