@@ -6,9 +6,10 @@ import {
 	INodeTypeDescription,
 	NodeOperationError,
 	IBinaryData,
-	IHttpRequestOptions,
+	IHttpRequestOptions
 } from 'n8n-workflow';
 import FormData = require('form-data');
+import axios from 'axios'
 
 export class CalibreWeb implements INodeType {
 	description: INodeTypeDescription = {
@@ -201,17 +202,11 @@ export class CalibreWeb implements INodeType {
 						const loginPageOptions: IHttpRequestOptions = {
 							method: 'GET',
 							url: `${baseUrl}/login`,
-							headers: {
-								'Accept': '*/*',
-							},
-							json: false,
+							returnFullResponse: true
 						};
 
-						const loginPageResponse = await this.helpers.requestWithAuthentication.call(
-							this,
-							'calibreWebApi',
-							loginPageOptions,
-						).catch(error => handleRequestError(error, loginPageOptions));
+						const loginPageResponse = await this.helpers.httpRequest(loginPageOptions)
+							.catch(error => handleRequestError(error, loginPageOptions));
 
 						// Extract CSRF token from login page
 						const loginCsrfMatch = loginPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
@@ -221,61 +216,59 @@ export class CalibreWeb implements INodeType {
 						const loginCsrfToken = loginCsrfMatch[1];
 						let cookies = loginPageResponse.headers['set-cookie'];
 						let cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
+						this.logger.info('CSRF: ' + loginCsrfToken);
+						this.logger.info('Cookies: ' + cookieHeader)
 
-						// Step 2: Perform login with credentials
-						const loginOptions: IHttpRequestOptions = {
-							method: 'POST',
-							url: `${baseUrl}/login`,
-							headers: {
-								'Content-Type': 'application/x-www-form-urlencoded',
-								'Cookie': cookieHeader,
-								'Accept': '*/*',
-							},
-							body: `csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&next=%2F`,
-							json: false,
-						};
-
-						const loginResponse = await this.helpers.requestWithAuthentication.call(
-							this,
-							'calibreWebApi',
-							loginOptions,
-						).catch(error => handleRequestError(error, loginOptions));
-
-						// Update cookies after login
-						cookies = loginResponse.headers['set-cookie'];
+						// STEP 2: Perform login with credentials						
+						let result = await axios.post(`${baseUrl}/login`, 
+							`csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&rememberme=on&next=%2F`,
+							{
+								headers: {
+									'Content-Type': 'application/x-www-form-urlencoded',
+									'Cookie': cookieHeader,
+									'Accept': '*/*',
+								},
+								maxRedirects: 0,
+								validateStatus: function (s: number) {
+									return s >= 200 && s <= 302
+								}
+							}
+						);
+												
+						cookies = result.headers['set-cookie'];
+						this.logger.info("cookies obj: " + JSON.stringify(cookies))
 						if (cookies) {
 							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
 						}
+						this.logger.info('cookie new: ' + cookieHeader)
 
-						// Step 3: Get main page after login to get new CSRF token for upload
-						const mainPageOptions: IHttpRequestOptions = {
-							method: 'GET',
-							url: `${baseUrl}/`,
+						const mainPage = await axios.get(`${baseUrl}/`, {
 							headers: {
 								'Cookie': cookieHeader,
 								'Accept': '*/*',
-							},
-							json: false,
-						};
+							}
+						})
+						this.logger.info(' ')
+						this.logger.info(mainPage.data)
 
-						const mainPageResponse = await this.helpers.requestWithAuthentication.call(
-							this,
-							'calibreWebApi',
-							mainPageOptions,
-						).catch(error => handleRequestError(error, mainPageOptions));
+						//"Wrong Username or Password"
+
+
+						
+						// Step 3: Get main page after login to get new CSRF token for upload
+						const mainPage2 = await axios.get(`${baseUrl}/`, {
+							headers: {
+								'Cookie': cookieHeader,
+								'Accept': '*/*',
+							}
+						})
 
 						// Extract CSRF token for upload
-						const uploadCsrfMatch = mainPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
+						const uploadCsrfMatch = mainPage2.data.match(/name="csrf_token" value="([^"]+)"/);
 						if (!uploadCsrfMatch) {
 							throw new Error('Could not find CSRF token for upload');
 						}
 						const uploadCsrfToken = uploadCsrfMatch[1];
-
-						// Update cookies from main page response
-						cookies = mainPageResponse.headers['set-cookie'];
-						if (cookies) {
-							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
-						}
 
 						// Create form data for file upload
 						const form = new FormData();
@@ -285,49 +278,29 @@ export class CalibreWeb implements INodeType {
 							contentType: binaryData.mimeType || 'application/epub+zip',
 						});
 
-						// Get form headers including boundary
-						const formHeaders = form.getHeaders();
-
-						// Prepare the upload request with proper form data
-						const requestOptions: IHttpRequestOptions = {
-							method: 'POST',
-							url: `${baseUrl}/upload`,
-							body: form,
-							headers: {
-								...formHeaders,
-								'X-Requested-With': 'XMLHttpRequest',
-								'Cookie': cookieHeader,
-								'Accept': '*/*',
-							},
-							json: false,
-						};
-
-						// Make upload request with CSRF token and cookies
-						const response = await this.helpers.requestWithAuthentication.call(
-							this,
-							'calibreWebApi',
-							requestOptions,
-						).catch(error => handleRequestError(error, requestOptions));
-
-						// Parse JSON response if it's JSON
-						let responseData;
-						try {
-							responseData = JSON.parse(response.body);
-						} catch (e) {
-							responseData = response.body;
-						}
+						let uploadResult = await axios.post(`${baseUrl}/upload`, 
+							form,
+							{
+								headers: {
+									'Content-Type': 'application/x-www-form-urlencoded',
+									'Cookie': cookieHeader,
+									'Accept': '*/*',
+								}
+							}
+						);
+						this.logger.debug('DATA: ' + JSON.stringify(uploadResult.data));						
+						const uploadedLocation = uploadResult.data?.location
 
 						returnData.push({
 							json: {
-								success: true,
-								statusCode: response.statusCode,
-								headers: response.headers,
-								body: responseData,
+								success: Boolean(uploadedLocation),
+								location: uploadedLocation
 							},
 						});
 					} catch (error) {
 						// Handle any other unexpected errors
 						this.logger.error('Unexpected Calibre Web Error', { error });
+						this.logger.warn('Trace: ' + error.stack);
 						throw new NodeOperationError(this.getNode(), 'An unexpected error occurred', {
 							itemIndex: i,
 							description: error.message,
