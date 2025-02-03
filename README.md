@@ -48,6 +48,20 @@ You need the following to use this node:
 * Requires n8n version 1.0.0 or later
 * Tested with Calibre Web version 0.6.20 and later
 
+## Troubleshooting
+
+* If you encounter authentication issues:
+  * Verify your credentials and base URL are correct
+  * Ensure your Calibre Web instance is accessible from n8n
+  * Check if your user has upload permissions
+
+* For upload failures:
+  * Verify the file format is supported (epub, mobi, pdf, etc.)
+  * Check if the file size is within your server's limits
+  * Ensure all required metadata fields are properly formatted
+
+Debug logs can be enabled in n8n settings to get more detailed error information.
+
 ## Resources
 
 * [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
