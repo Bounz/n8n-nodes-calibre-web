@@ -11,14 +11,19 @@ import {
 import FormData from 'form-data';
 import axios, { AxiosError } from 'axios';
 
+interface CalibreWebResponse {
+	error?: string;
+	location?: string;
+	status?: string;
+}
+
 interface CalibreWebError {
 	statusCode?: number;
 	response?: {
 		statusCode?: number;
-		body?: any;
+		body?: CalibreWebResponse;
 	};
 	message: string;
-	error?: any;
 }
 
 export class CalibreWeb implements INodeType {
@@ -189,16 +194,15 @@ export class CalibreWeb implements INodeType {
 						this.logger.error('Calibre Web Request Error', {
 							statusCode: errorDetails.statusCode,
 							message: errorDetails.message,
+							error: JSON.stringify(errorDetails.response, null, 2)
 						});
 
 						throw new NodeOperationError(
 							this.getNode(),
-							`Request failed: ${errorDetails.message}. Status: ${
-								errorDetails.statusCode || 'unknown'
-							}`,
+							`Request failed: ${errorDetails.message}`,
 							{
 								itemIndex: i,
-								description: `Check if your user has upload permissions and credentials are correct. Details: ${JSON.stringify(errorDetails)}`,
+								description: `Status: ${errorDetails.statusCode || 'unknown'}. Details: ${JSON.stringify(errorDetails.response)}`,
 							},
 						);
 					};
@@ -221,11 +225,17 @@ export class CalibreWeb implements INodeType {
 						// Extract CSRF token from login page
 						const loginCsrfMatch = loginPageResponse.body.match(/name="csrf_token" value="([^"]+)"/);
 						if (!loginCsrfMatch) {
-							throw new Error('Could not find CSRF token on login page');
+							throw new NodeOperationError(this.getNode(), 'Authentication failed: CSRF token not found on login page');
 						}
 						const loginCsrfToken = loginCsrfMatch[1];
 						let cookies = loginPageResponse.headers['set-cookie'];
 						let cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
+						
+						this.logger.debug('Authentication', {
+							csrfToken: loginCsrfToken,
+							cookies: cookieHeader
+						});
+						
 						// STEP 2: Perform login with credentials
 						let result = await axios.post(`${baseUrl}/login`, 
 							`csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&rememberme=on&next=%2F`,
@@ -273,7 +283,7 @@ export class CalibreWeb implements INodeType {
 						// Extract CSRF token for upload
 						const uploadCsrfMatch = mainPage2.data.match(/name="csrf_token" value="([^"]+)"/);
 						if (!uploadCsrfMatch) {
-							throw new Error('Could not find CSRF token for upload');
+							throw new NodeOperationError(this.getNode(), 'Authentication failed: CSRF token not found for upload');
 						}
 						const uploadCsrfToken = uploadCsrfMatch[1];
 
@@ -295,7 +305,20 @@ export class CalibreWeb implements INodeType {
 								}
 							}
 						);
-						this.logger.debug('DATA: ' + JSON.stringify(uploadResult.data));						
+						this.logger.debug('Upload Response', {
+							data: uploadResult.data
+						});
+						
+						if (uploadResult.data?.error) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Upload failed',
+								{
+									description: uploadResult.data.error
+								}
+							);
+						}
+						
 						const uploadedLocation = uploadResult.data?.location
 
 						returnData.push({
