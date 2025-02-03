@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-calibre-web",
   "version": "0.1.3",
-  "description": "n8n node for secure integration with Calibre Web library management system",
+  "description": "n8n node for integration with Calibre Web library management system",
   "keywords": [
     "n8n-community-node-package",
     "calibre-web",
@@ -11,8 +11,8 @@
   "license": "MIT",
   "homepage": "https://github.com/Bounz/n8n-nodes-calibre-web",
   "author": {
-    "name": "Bounz",
-    "email": "me@bounz.net"
+    "name": "Alexander Sidorenko",
+    "email": "hi@bounz.net"
   },
   "repository": {
     "type": "git",

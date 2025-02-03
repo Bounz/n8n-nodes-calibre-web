@@ -2,12 +2,13 @@ import {
 	IAuthenticateGeneric,
 	ICredentialTestRequest,
 	ICredentialType,
-	INodeProperties,
+	INodeProperties
 } from 'n8n-workflow';
 
 export class CalibreWebApi implements ICredentialType {
 	name = 'calibreWebApi';
 	displayName = 'Calibre Web API';
+	icon = { light: 'file:calibre-web.svg', dark: 'file:calibre-web.svg' } as const;
 	documentationUrl = 'https://github.com/janeczku/calibre-web';
 	properties: INodeProperties[] = [
 		{
@@ -38,7 +39,6 @@ export class CalibreWebApi implements ICredentialType {
 			placeholder: 'https://calibre.example.com',
 			description: 'Base URL of your Calibre Web instance. Must use HTTPS in production for security. Do not include trailing slashes.',
 			validateType: 'url',
-			hint: 'Use environment variables for production deployments',
 		},
 	];
 

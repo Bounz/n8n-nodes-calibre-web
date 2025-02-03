@@ -1,6 +1,5 @@
 import {
 	IExecuteFunctions,
-	IDataObject,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
@@ -30,7 +29,7 @@ export class CalibreWeb implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Calibre Web',
 		name: 'calibreWeb',
-		icon: 'file:calibreweb.svg',
+		icon: 'file:calibre-web.svg',
 		group: ['transform'],
 		version: 1,
 		description: 'Upload books to Calibre-Web',
@@ -80,70 +79,7 @@ export class CalibreWeb implements INodeType {
 					},
 				},
 				description: 'Name of the binary property containing the file to be uploaded',
-			},
-			{
-				displayName: 'Additional Fields',
-				name: 'additionalFields',
-				type: 'collection',
-				placeholder: 'Add Field',
-				default: {},
-				displayOptions: {
-					show: {
-						operation: ['uploadBook'],
-					},
-				},
-				options: [
-					{
-						displayName: 'Title',
-						name: 'title',
-						type: 'string',
-						default: '',
-						description: 'Title of the book',
-					},
-					{
-						displayName: 'Author',
-						name: 'author',
-						type: 'string',
-						default: '',
-						description: 'Author of the book',
-					},
-					{
-						displayName: 'Description',
-						name: 'description',
-						type: 'string',
-						default: '',
-						description: 'Description/Summary of the book',
-					},
-					{
-						displayName: 'Tags',
-						name: 'tags',
-						type: 'string',
-						default: '',
-						description: 'Comma-separated list of tags',
-					},
-					{
-						displayName: 'Series',
-						name: 'series',
-						type: 'string',
-						default: '',
-						description: 'Series name',
-					},
-					{
-						displayName: 'Series Index',
-						name: 'series_index',
-						type: 'number',
-						default: 1,
-						description: 'Position in series',
-					},
-					{
-						displayName: 'Languages',
-						name: 'languages',
-						type: 'string',
-						default: '',
-						description: 'Comma-separated list of languages',
-					},
-				],
-			},
+			}
 		],
 	};
 
@@ -157,7 +93,6 @@ export class CalibreWeb implements INodeType {
 
 				if (operation === 'uploadBook') {
 					const binaryPropertyName = this.getNodeParameter('binaryPropertyName', i) as string;
-					const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
 
 					// Ensure binary data exists and is properly typed
 					const binaryData = items[i].binary?.[binaryPropertyName] as IBinaryData | undefined;
@@ -166,23 +101,6 @@ export class CalibreWeb implements INodeType {
 							itemIndex: i,
 						});
 					}
-					// Prepare form data with binary data
-					const formData: IDataObject = {
-						'btn-upload': {
-							value: await this.helpers.getBinaryDataBuffer(i, binaryPropertyName),
-							options: {
-								filename: binaryData.fileName || 'unknown.epub',
-								contentType: binaryData.mimeType || 'application/epub+zip',
-							},
-						},
-					};
-
-					// Add metadata fields if provided
-					Object.keys(additionalFields).forEach((key) => {
-						if (additionalFields[key] !== '') {
-							formData[key] = additionalFields[key];
-						}
-					});
 
 					const handleRequestError = (error: AxiosError | CalibreWebError, options: IHttpRequestOptions) => {
 						const errorDetails = {
@@ -230,14 +148,14 @@ export class CalibreWeb implements INodeType {
 						const loginCsrfToken = loginCsrfMatch[1];
 						let cookies = loginPageResponse.headers['set-cookie'];
 						let cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
-						
+
 						this.logger.debug('Authentication', {
 							csrfToken: loginCsrfToken,
 							cookies: cookieHeader
 						});
-						
+
 						// STEP 2: Perform login with credentials
-						let result = await axios.post(`${baseUrl}/login`, 
+						let result = await axios.post(`${baseUrl}/login`,
 							`csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&rememberme=on&next=%2F`,
 							{
 								headers: {
@@ -251,7 +169,7 @@ export class CalibreWeb implements INodeType {
 								}
 							}
 						).catch(error => handleRequestError(error, { method: 'POST', url: `${baseUrl}/login` }));
-												
+
 						cookies = result.headers['set-cookie'];
 						if (cookies) {
 							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
@@ -263,6 +181,7 @@ export class CalibreWeb implements INodeType {
 								'Accept': '*/*',
 							}
 						}).catch(error => handleRequestError(error, { method: 'GET', url: `${baseUrl}/` }));
+
 						// Verify successful login
 						if (mainPage.data.includes('Wrong Username or Password')) {
 							throw new NodeOperationError(
@@ -275,7 +194,6 @@ export class CalibreWeb implements INodeType {
 						}
 
 
-						
 						// Step 3: Get main page after login to get new CSRF token for upload
 						const mainPage2 = await axios.get(`${baseUrl}/`, {
 							headers: {
@@ -299,7 +217,7 @@ export class CalibreWeb implements INodeType {
 							contentType: binaryData.mimeType || 'application/epub+zip',
 						});
 
-						let uploadResult = await axios.post(`${baseUrl}/upload`, 
+						let uploadResult = await axios.post(`${baseUrl}/upload`,
 							form,
 							{
 								headers: {
@@ -309,20 +227,7 @@ export class CalibreWeb implements INodeType {
 								}
 							}
 						).catch(error => handleRequestError(error, { method: 'POST', url: `${baseUrl}/upload` }));
-						this.logger.debug('Upload Response', {
-							data: uploadResult.data
-						});
-						
-						if (uploadResult.data?.error) {
-							throw new NodeOperationError(
-								this.getNode(),
-								'Upload failed',
-								{
-									description: uploadResult.data.error
-								}
-							);
-						}
-						
+
 						const uploadedLocation = uploadResult.data?.location
 
 						returnData.push({

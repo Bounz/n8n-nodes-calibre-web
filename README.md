@@ -34,7 +34,6 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 * Upload Book
   * Upload a new book to your Calibre Web instance
-  * Supports various metadata fields including title, author, description, tags, series, and languages
 
 ## Credentials
 
@@ -46,7 +45,7 @@ You need the following to use this node:
 ## Compatibility
 
 * Requires n8n version 1.0.0 or later
-* Tested with Calibre Web version 0.6.20 and later
+* Tested with Calibre Web version 0.6.24 and later
 
 ## Troubleshooting
 
@@ -58,7 +57,6 @@ You need the following to use this node:
 * For upload failures:
   * Verify the file format is supported (epub, mobi, pdf, etc.)
   * Check if the file size is within your server's limits
-  * Ensure all required metadata fields are properly formatted
 
 Debug logs can be enabled in n8n settings to get more detailed error information.
 
