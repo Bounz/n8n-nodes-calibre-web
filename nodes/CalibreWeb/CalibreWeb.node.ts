@@ -8,8 +8,18 @@ import {
 	IBinaryData,
 	IHttpRequestOptions
 } from 'n8n-workflow';
-import FormData = require('form-data');
-import axios from 'axios'
+import FormData from 'form-data';
+import axios, { AxiosError } from 'axios';
+
+interface CalibreWebError {
+	statusCode?: number;
+	response?: {
+		statusCode?: number;
+		body?: any;
+	};
+	message: string;
+	error?: any;
+}
 
 export class CalibreWeb implements INodeType {
 	description: INodeTypeDescription = {
@@ -169,11 +179,11 @@ export class CalibreWeb implements INodeType {
 						}
 					});
 
-					const handleRequestError = (error: any, options: IHttpRequestOptions) => {
+					const handleRequestError = (error: AxiosError | CalibreWebError, options: IHttpRequestOptions) => {
 						const errorDetails = {
-							statusCode: error.statusCode || error.response?.statusCode,
+							statusCode: (error as AxiosError).response?.status || (error as CalibreWebError).statusCode,
 							message: error.message,
-							response: error.response?.body || error.error,
+							response: (error as AxiosError).response?.data || (error as CalibreWebError).response?.body || error.message,
 						};
 
 						this.logger.error('Calibre Web Request Error', {
@@ -216,10 +226,7 @@ export class CalibreWeb implements INodeType {
 						const loginCsrfToken = loginCsrfMatch[1];
 						let cookies = loginPageResponse.headers['set-cookie'];
 						let cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : '';
-						this.logger.info('CSRF: ' + loginCsrfToken);
-						this.logger.info('Cookies: ' + cookieHeader)
-
-						// STEP 2: Perform login with credentials						
+						// STEP 2: Perform login with credentials
 						let result = await axios.post(`${baseUrl}/login`, 
 							`csrf_token=${encodeURIComponent(loginCsrfToken)}&username=${encodeURIComponent(credentials.username as string)}&password=${encodeURIComponent(credentials.password as string)}&rememberme=on&next=%2F`,
 							{
@@ -236,11 +243,9 @@ export class CalibreWeb implements INodeType {
 						);
 												
 						cookies = result.headers['set-cookie'];
-						this.logger.info("cookies obj: " + JSON.stringify(cookies))
 						if (cookies) {
 							cookieHeader = Array.isArray(cookies) ? cookies.join('; ') : cookies;
 						}
-						this.logger.info('cookie new: ' + cookieHeader)
 
 						const mainPage = await axios.get(`${baseUrl}/`, {
 							headers: {
@@ -248,8 +253,10 @@ export class CalibreWeb implements INodeType {
 								'Accept': '*/*',
 							}
 						})
-						this.logger.info(' ')
-						this.logger.info(mainPage.data)
+						// Verify successful login
+						if (mainPage.data.includes('Wrong Username or Password')) {
+							throw new Error('Authentication failed: Invalid credentials');
+						}
 
 						//"Wrong Username or Password"
 
