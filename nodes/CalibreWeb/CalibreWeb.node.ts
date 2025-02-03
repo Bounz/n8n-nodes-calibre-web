@@ -250,7 +250,7 @@ export class CalibreWeb implements INodeType {
 									return s >= 200 && s <= 302
 								}
 							}
-						);
+						).catch(error => handleRequestError(error, { method: 'POST', url: `${baseUrl}/login` }));
 												
 						cookies = result.headers['set-cookie'];
 						if (cookies) {
@@ -262,13 +262,17 @@ export class CalibreWeb implements INodeType {
 								'Cookie': cookieHeader,
 								'Accept': '*/*',
 							}
-						})
+						}).catch(error => handleRequestError(error, { method: 'GET', url: `${baseUrl}/` }));
 						// Verify successful login
 						if (mainPage.data.includes('Wrong Username or Password')) {
-							throw new Error('Authentication failed: Invalid credentials');
+							throw new NodeOperationError(
+								this.getNode(),
+								'Authentication failed',
+								{
+									description: 'Invalid username or password'
+								}
+							);
 						}
-
-						//"Wrong Username or Password"
 
 
 						
@@ -278,7 +282,7 @@ export class CalibreWeb implements INodeType {
 								'Cookie': cookieHeader,
 								'Accept': '*/*',
 							}
-						})
+						}).catch(error => handleRequestError(error, { method: 'GET', url: `${baseUrl}/` }));
 
 						// Extract CSRF token for upload
 						const uploadCsrfMatch = mainPage2.data.match(/name="csrf_token" value="([^"]+)"/);
@@ -304,7 +308,7 @@ export class CalibreWeb implements INodeType {
 									'Accept': '*/*',
 								}
 							}
-						);
+						).catch(error => handleRequestError(error, { method: 'POST', url: `${baseUrl}/upload` }));
 						this.logger.debug('Upload Response', {
 							data: uploadResult.data
 						});
