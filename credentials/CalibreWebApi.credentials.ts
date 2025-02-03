@@ -35,7 +35,10 @@ export class CalibreWebApi implements ICredentialType {
 			type: 'string',
 			default: '',
 			required: true,
-			description: 'Base URL of your Calibre Web instance including protocol (e.g., https://calibre.example.com). Use environment variables for production deployments.',
+			placeholder: 'https://calibre.example.com',
+			description: 'Base URL of your Calibre Web instance. Must use HTTPS in production for security. Do not include trailing slashes.',
+			validateType: 'url',
+			hint: 'Use environment variables for production deployments',
 		},
 	];
 
